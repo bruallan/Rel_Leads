@@ -1,0 +1,307 @@
+import requests
+import time
+import re
+from datetime import datetime, timedelta
+from dotenv import load_dotenv
+import os
+
+# Importação da biblioteca do Facebook para a API do Meta Ads
+from facebook_business.api import FacebookAdsApi
+from facebook_business.adobjects.adaccount import AdAccount
+
+# --- Carregar variáveis de ambiente do arquivo .env ---
+load_dotenv()
+
+# --- Configurações Carregadas ---
+BOTCONVERSA_TOKEN = os.getenv('BOTCONVERSA_API_TOKEN')
+RDSTATION_TOKEN = os.getenv('RDSTATION_CRM_TOKEN')
+CONTATOS_GRUPO_1 = os.getenv('CONTATOS_GRUPO_1', '').split(',') if os.getenv('CONTATOS_GRUPO_1') else []
+CONTATOS_GRUPO_2 = os.getenv('CONTATOS_GRUPO_2', '').split(',') if os.getenv('CONTATOS_GRUPO_2') else []
+
+META_ADS_ACCESS_TOKEN = os.getenv('META_ADS_ACCESS_TOKEN')
+META_AD_ACCOUNTS = {
+    'bella_serra': os.getenv('META_AD_ACCOUNT_ID_BELLA_SERRA'),
+    'vista_bella': os.getenv('META_AD_ACCOUNT_ID_VISTA_BELLA')
+}
+
+RD_RESPONSAVEIS = {
+    'Reinaldo': '67f667359b9f1c001f3156d0',
+    'Letícia': '680777cb2455f800240ea6e1',
+    'Lucas': '67ae25c4bc39410014dd6f82',
+    'Bruno': '67af917534509600242cf93a',
+    'Diogo': '67af902330fafb001c8ef7da'
+}
+RD_FUNIL_PADRAO_ID = '67ae261cab5a8e00178ea85f'
+
+BOTCONVERSA_BASE_URL = "https://backend.botconversa.com.br/api/v1"
+RDSTATION_BASE_URL = "https://crm.rdstation.com/api/v1"
+
+# --- Função Auxiliar ---
+def normalizar_telefone(numero):
+    """Limpa e padroniza o número de telefone para o formato +55DDDXXXXYYYY."""
+    if not numero: return None
+    apenas_digitos = re.sub(r'\D', '', str(numero))
+    if apenas_digitos.startswith('55'):
+        apenas_digitos = apenas_digitos[2:]
+    return f"+55{apenas_digitos}"
+
+# --- Funções de Coleta de Dados ---
+
+# Substitua apenas esta função no seu script.
+def obter_dados_meta_ads(data_alvo):
+    """Busca os dados de leads reais da API do Meta Ads com a correção no ID da conta."""
+    print("Buscando dados do Meta Ads...")
+    if not META_ADS_ACCESS_TOKEN:
+        print("-> ERRO: Token de acesso do Meta Ads não configurado no .env")
+        return {'total': 0, 'bella_serra': 0, 'vista_bella': 0}
+
+    try:
+        FacebookAdsApi.init(access_token=META_ADS_ACCESS_TOKEN)
+        resultados = {'total': 0}
+        data_formatada = data_alvo.strftime('%Y-%m-%d')
+        params = {
+            'time_range': {'since': data_formatada, 'until': data_formatada},
+            'fields': ['actions', 'spend'],
+            'level': 'account'
+        }
+        
+        tipos_de_acao_lead = ['lead', 'onsite_conversion.lead', 'on_facebook_lead', 'messaging_conversation_started_7d']
+
+        for nome, account_id in META_AD_ACCOUNTS.items():
+            if not account_id: continue
+            
+            # --- CORREÇÃO AQUI ---
+            # Removemos o "act_" extra que estava sendo adicionado.
+            # O ID da conta já vem completo do arquivo .env.
+            account = AdAccount(account_id)
+            # ---------------------
+
+            insights = account.get_insights(params=params)
+            count = 0
+            if insights:
+                for action in insights[0].get('actions', []):
+                    if action['action_type'] in tipos_de_acao_lead:
+                        count += int(action['value'])
+            
+            resultados[nome] = count
+            resultados['total'] += count
+            
+        print(f"-> Sucesso! Encontrados {resultados['total']} leads no Meta Ads.")
+        return resultados
+    except Exception as e:
+        print(f"-> FALHA ao buscar dados do Meta Ads: {e}")
+        return {'total': 0, 'bella_serra': 0, 'vista_bella': 0}
+
+def processar_contatos_botconversa(data_alvo):
+    """Percorre todos os contatos do BotConversa para contar os de hoje e criar um mapa completo."""
+    print("Processando contatos do BotConversa (isso pode levar um momento)...")
+    if not BOTCONVERSA_TOKEN: return [], {}
+    
+    endpoint = "/webhook/subscribers/"
+    url = f"{BOTCONVERSA_BASE_URL}{endpoint}"
+    headers = {"API-KEY": BOTCONVERSA_TOKEN}
+    leads_do_dia_alvo = []
+    mapa_telefone_id = {}
+    pagina = 1
+
+    while url:
+        try:
+            print(f"-> Lendo página {pagina} de contatos do BotConversa...")
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            dados = response.json()
+
+            for inscrito in dados.get('results', []):
+                telefone_normalizado = normalizar_telefone(inscrito.get('phone'))
+                subscriber_id = inscrito.get('id')
+                if telefone_normalizado and subscriber_id:
+                    mapa_telefone_id[telefone_normalizado] = subscriber_id
+
+                created_at_str = inscrito.get('created_at')
+                if created_at_str:
+                    data_inscrito = datetime.fromisoformat(created_at_str.replace('Z', '')).date()
+                    if data_inscrito == data_alvo:
+                        leads_do_dia_alvo.append({
+                            "nome": inscrito.get('full_name', 'N/A'),
+                            "telefone": telefone_normalizado
+                        })
+            url = dados.get('next')
+            pagina += 1
+        except requests.exceptions.RequestException:
+            return [], {}
+    print(f"-> Processamento concluído: {len(leads_do_dia_alvo)} novos contatos encontrados no BotConversa.")
+    return leads_do_dia_alvo, mapa_telefone_id
+
+def obter_dados_rdstation(data_alvo):
+    """Busca os deals criados no RD Station para uma data específica."""
+    print("Buscando dados do RD Station...")
+    if not RDSTATION_TOKEN: return {}
+
+    endpoint = "/deals"
+    url = f"{RDSTATION_BASE_URL}{endpoint}"
+    data_formatada = data_alvo.strftime('%Y-%m-%d')
+    params = {
+        'token': RDSTATION_TOKEN,
+        'created_at_gte': f"{data_formatada}T00:00:00-03:00",
+        'created_at_lte': f"{data_formatada}T23:59:59-03:00"
+    }
+    leads_rd = {'total': 0, 'bella_serra': 0, 'vista_bella': 0, 'nao_atribuido': 0, 'lista_detalhada': []}
+
+    try:
+        print(f"-> Buscando negociações do dia {data_formatada} no RD Station...")
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        dados = response.json()
+
+        for deal in dados.get('deals', []):
+            contato_lista = deal.get('contacts', [])
+            telefone_normalizado, nome = None, deal.get('name', 'NEGOCIAÇÃO SEM CONTATO')
+            if contato_lista:
+                contato = contato_lista[0]
+                nome = contato.get('name', nome)
+                if contato.get('phones'):
+                    telefone_normalizado = normalizar_telefone(contato['phones'][0].get('phone'))
+
+            produto = "N/A"
+            if deal.get('deal_products'):
+                produto = deal['deal_products'][0].get('name', 'N/A').strip()
+
+            leads_rd['lista_detalhada'].append({'nome': nome, 'telefone': telefone_normalizado, 'empreendimento': produto})
+            
+            if 'Bella Serra' in produto: leads_rd['bella_serra'] += 1
+            elif 'Vista Bella' in produto: leads_rd['vista_bella'] += 1
+            else: leads_rd['nao_atribuido'] += 1
+        
+        leads_rd['total'] = len(leads_rd['lista_detalhada'])
+        print(f"-> Processamento concluído: {leads_rd['total']} novos leads encontrados no RD Station.")
+        return leads_rd
+    except requests.exceptions.RequestException as e:
+        print(f"-> FALHA ao buscar dados do RD Station: {e}")
+        return {}
+
+def obter_contagem_por_responsavel_rd():
+    """Busca a contagem de leads ATIVOS (não ganhos e não perdidos) por responsável."""
+    print("Buscando contagem de leads por responsável no RD Station...")
+    if not RDSTATION_TOKEN: return {}
+    
+    resultados = {}
+    try:
+        for nome, user_id in RD_RESPONSAVEIS.items():
+            # --- AJUSTE AQUI ---
+            # Adicionado o parâmetro 'lost': 'false' para excluir leads descartados
+            params = {
+                'token': RDSTATION_TOKEN,
+                'user_id': user_id,
+                'deal_pipeline_id': RD_FUNIL_PADRAO_ID,
+                'win': 'false',
+                'lost': 'false'
+            }
+            response = requests.get(f"{RDSTATION_BASE_URL}/deals", params=params)
+            response.raise_for_status()
+            resultados[nome] = response.json().get('total', 0)
+        print("-> Sucesso! Contagem por responsável obtida.")
+        return resultados
+    except Exception as e:
+        print(f"-> FALHA ao obter contagem por responsável: {e}")
+        return {}
+
+# --- Funções de Análise e Mensagens ---
+
+def analisar_e_auditar_dados(leads_bc, leads_rd_lista, data_relatorio):
+    header = f"*Análise de Discrepâncias ({data_relatorio.strftime('%d/%m/%Y')})*\n"
+    mapa_leads_bc = {lead['telefone']: lead['nome'] for lead in leads_bc if lead.get('telefone')}
+    mapa_leads_rd = {lead['telefone']: lead['nome'] for lead in leads_rd_lista if lead.get('telefone')}
+    telefones_bc = set(mapa_leads_bc.keys())
+    telefones_rd = set(mapa_leads_rd.keys())
+
+    texto_rd_extra = f"\n*Leads no RD que NÃO estão no BotConversa do dia ({len(telefones_rd - telefones_bc)}):*\n"
+    if not (telefones_rd - telefones_bc): texto_rd_extra += "_Nenhum._\n"
+    for tel in sorted(list(telefones_rd - telefones_bc)):
+        texto_rd_extra += f"- {mapa_leads_rd[tel]} ({tel})\n"
+        
+    texto_bc_extra = f"\n*Leads no BotConversa que NÃO estão no RD do dia ({len(telefones_bc - telefones_rd)}):*\n"
+    if not (telefones_bc - telefones_rd): texto_bc_extra += "_Nenhum._\n"
+    for tel in sorted(list(telefones_bc - telefones_rd)):
+        texto_bc_extra += f"- {mapa_leads_bc[tel]} ({tel})\n"
+        
+    return header + texto_rd_extra + texto_bc_extra
+
+def montar_mensagem_resumo(meta, bc_count, rd, data_relatorio):
+    data_formatada = data_relatorio.strftime('%d/%m/%Y')
+    return f"""
+*Relatório de Leads ({data_formatada})*
+
+*1. Captação (Meta Ads):* {meta.get('total', 0)}
+- Bella Serra: {meta.get('bella_serra', 0)}
+- Vista Bella: {meta.get('vista_bella', 0)}
+
+*2. Interação (BotConversa):* {bc_count}
+
+*3. Cadastro (RD Station):* {rd.get('total', 0)}
+- Bella Serra: {rd.get('bella_serra', 0)}
+- Vista Bella: {rd.get('vista_bella', 0)}
+- Não atribuído: {rd.get('nao_atribuido', 0)}
+------
+"""
+
+def montar_mensagem_analise(analise_texto, contagem_responsaveis):
+    texto_responsaveis = "\n*Leads Ativos no Funil Padrão por Responsável:*\n"
+    for nome, total in contagem_responsaveis.items():
+        texto_responsaveis += f"- {nome}: {total}\n"
+    return analise_texto + texto_responsaveis
+
+# --- Função de Envio ---
+def enviar_mensagem_pelo_botconversa(mensagem, contatos, mapa_telefone_id):
+    print(f"\nIniciando envio para grupo de {len(contatos)} contato(s)...")
+    if not BOTCONVERSA_TOKEN: return
+    headers = {"API-KEY": BOTCONVERSA_TOKEN}
+    for numero in contatos:
+        numero_normalizado = normalizar_telefone(numero)
+        if not numero_normalizado: continue
+        subscriber_id = mapa_telefone_id.get(numero_normalizado)
+        if subscriber_id:
+            print(f"-> Enviando para {numero_normalizado} (ID: {subscriber_id})...")
+            try:
+                send_url = f"{BOTCONVERSA_BASE_URL}/webhook/subscriber/{subscriber_id}/send_message/"
+                payload = {"type": "text", "value": mensagem}
+                response_send = requests.post(send_url, headers=headers, json=payload, timeout=10)
+                response_send.raise_for_status()
+                print(f"-> Sucesso!")
+            except requests.exceptions.RequestException as e:
+                print(f"-> FALHA no envio para {numero_normalizado}: {e}")
+        else:
+            print(f"-> ERRO: O número {numero_normalizado} não foi encontrado no mapa de contatos do BotConversa.")
+        time.sleep(2)
+
+# --- Rotina Principal ---
+def trabalho_diario():
+    data_alvo = datetime.now().date() - timedelta(days=1)
+    print(f"--- INICIANDO ROTINA DIÁRIA PARA DADOS DE: {data_alvo.strftime('%d/%m/%Y')} ---")
+    
+    # Coleta de Todos os Dados
+    leads_bc, mapa_contatos_bc = processar_contatos_botconversa(data_alvo)
+    dados_leads_rd = obter_dados_rdstation(data_alvo)
+    dados_meta = obter_dados_meta_ads(data_alvo)
+    contagem_responsaveis = obter_contagem_por_responsavel_rd()
+    
+    # Geração dos Relatórios
+    texto_analise_discrepancias = analisar_e_auditar_dados(leads_bc, dados_leads_rd.get('lista_detalhada', []), data_alvo)
+    mensagem_resumo = montar_mensagem_resumo(dados_meta, len(leads_bc), dados_leads_rd, data_alvo)
+    mensagem_analise = montar_mensagem_analise(texto_analise_discrepancias, contagem_responsaveis)
+    
+    # Envio dos Relatórios
+    print("\n--- [GRUPO 1] ENVIANDO MENSAGEM DE RESUMO ---")
+    print(mensagem_resumo)
+    enviar_mensagem_pelo_botconversa(mensagem_resumo, CONTATOS_GRUPO_1, mapa_contatos_bc)
+
+    print("\n--- [GRUPO 2] ENVIANDO MENSAGEM DE ANÁLISE ---")
+    print(mensagem_analise)
+    enviar_mensagem_pelo_botconversa(mensagem_analise, CONTATOS_GRUPO_2, mapa_contatos_bc)
+    
+    print(f"--- ROTINA DIÁRIA CONCLUÍDA ---\n")
+
+# --- Execução ---
+if __name__ == "__main__":
+    print("--- INICIANDO SCRIPT ---")
+    trabalho_diario()
+    print("--- FIM DO SCRIPT ---")
