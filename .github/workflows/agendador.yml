@@ -1,0 +1,52 @@
+# .github/workflows/agendador.yml
+
+# Nome do nosso workflow. Aparecerá na aba "Actions" do GitHub.
+name: Executar Script Diariamente
+
+# Define o gatilho (trigger) que inicia o workflow.
+on:
+  # A palavra 'schedule' indica que é um agendamento.
+  schedule:
+    # A sintaxe 'cron' define a frequência.
+    # Esta configuração significa: "Às 12:00, todos os dias".
+    # Minuto(0-59) Hora(0-23) Dia-do-mês(1-31) Mês(1-12) Dia-da-semana(0-7)
+    # A hora é em UTC (Coordinated Universal Time). 12:00 UTC = 09:00 no horário de Brasília (BRT).
+    - cron: '0 8
+    * * *'
+  
+  # Este gatilho 'workflow_dispatch' permite que você rode o workflow manualmente
+  # através da interface do GitHub. É ótimo para testes!
+  workflow_dispatch:
+
+# Define os "trabalhos" (jobs) que este workflow irá executar.
+jobs:
+  # Nome do nosso job. Pode ser qualquer nome.
+  build:
+    # Define o tipo de "máquina virtual" que será usada para rodar o job.
+    # 'ubuntu-latest' é uma máquina Linux limpa e a mais comum.
+    runs-on: ubuntu-latest
+
+    # Define a sequência de passos (steps) a serem executados no job.
+    steps:
+      # Passo 1: Baixar o código do seu repositório para a máquina virtual.
+      - name: Checkout do Repositório
+        uses: actions/checkout@v3
+
+      # Passo 2: Configurar o ambiente Python.
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          # Define a versão do Python que você quer usar.
+          python-version: '3.10'
+
+      # Passo 3 (Opcional, mas recomendado): Instalar dependências.
+      # Se seu script precisa de bibliotecas (pandas, requests, etc.),
+      # crie um arquivo 'requirements.txt' no seu repositório e descomente as linhas abaixo.
+      # - name: Instalar Dependências
+      #   run: |
+      #     python -m pip install --upgrade pip
+      #     pip install -r requirements.txt
+      
+      # Passo 4: Executar o script Python.
+      - name: Executar o script
+        run: python main.py
