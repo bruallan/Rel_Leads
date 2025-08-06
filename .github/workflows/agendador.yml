@@ -4,7 +4,7 @@ name: Executar Script Diariamente
 
 on:
   schedule:
-    - cron: '0 19 * * *'
+    - cron: '20 19 * * *'
   workflow_dispatch:
 
 jobs:
