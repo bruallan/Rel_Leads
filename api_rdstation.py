@@ -10,24 +10,44 @@ def obter_dados_rdstation(data_alvo):
     endpoint = "/deals"
     url = f"{config.RDSTATION_BASE_URL}{endpoint}"
     data_formatada = data_alvo.strftime('%Y-%m-%d')
-    params = {
-        'token': config.RDSTATION_TOKEN,
-        'created_at_gte': f"{data_formatada}T00:00:00-03:00",
-        'created_at_lte': f"{data_formatada}T23:59:59-03:00"
-    }
     
-    # ATUALIZAÇÃO: Adicionada a lista para guardar os "não atribuídos"
+    # Dicionário para guardar os resultados
     leads_rd = {
         'total': 0, 'bella_serra': 0, 'vista_bella': 0, 'nao_atribuido': 0, 
         'lista_detalhada': [], 'lista_nao_atribuidos': [] 
     }
-    try:
-        print(f"-> Buscando negociações do dia {data_formatada} no RD Station...")
-        response = requests.get(url, params=params, timeout=30)
-        response.raise_for_status()
-        dados = response.json()
+    
+    # --- INÍCIO DA LÓGICA DE PAGINAÇÃO ---
+    all_deals_do_dia = []
+    page = 1
+    has_more = True
+    print(f"-> Buscando negociações do dia {data_formatada} no RD Station (com paginação)...")
 
-        for deal in dados.get('deals', []):
+    try:
+        while has_more:
+            params = {
+                'token': config.RDSTATION_TOKEN,
+                'created_at_gte': f"{data_formatada}T00:00:00-03:00",
+                'created_at_lte': f"{data_formatada}T23:59:59-03:00",
+                'page': page,
+                'limit': 200 # Pede o máximo de itens por página
+            }
+            response = requests.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            dados = response.json()
+            
+            deals_da_pagina = dados.get('deals', [])
+            all_deals_do_dia.extend(deals_da_pagina)
+            
+            # A API do RD Station pode não ter o 'has_more', então verificamos se a página veio vazia
+            if not deals_da_pagina:
+                has_more = False
+            else:
+                page += 1
+        # --- FIM DA LÓGICA DE PAGINAÇÃO ---
+
+        # Agora processamos a lista completa de deals que coletamos
+        for deal in all_deals_do_dia:
             contato_lista = deal.get('contacts', [])
             telefone_normalizado = None
             nome = deal.get('name', 'NEGOCIAÇÃO SEM CONTATO')
@@ -51,7 +71,6 @@ def obter_dados_rdstation(data_alvo):
                 leads_rd['vista_bella'] += 1
             else:
                 leads_rd['nao_atribuido'] += 1
-                # ATUALIZAÇÃO: Guarda o lead na lista de "não atribuídos"
                 leads_rd['lista_nao_atribuidos'].append(lead_detalhado)
         
         leads_rd['total'] = len(leads_rd['lista_detalhada'])
@@ -96,4 +115,5 @@ def obter_contagem_por_responsavel_rd():
         return resultados
     except Exception as e:
         print(f"-> FALHA ao obter contagem por responsável: {e}")
+
         return {}
