@@ -19,7 +19,7 @@ def trabalho_diario():
     texto_analise = analisar_e_auditar_dados(leads_bc, dados_leads_rd, data_alvo)
     
     mensagem_resumo = montar_mensagem_resumo(dados_meta, len(leads_bc), dados_leads_rd, data_alvo)
-    mensagem_analise = montar_mensagem_analise(texto_analise, contagem_responsaveis)
+    mensagem_analise = montar_mensagem_analise(contagem_responsaveis, texto_analise)
     
     alertas = []
     if dados_meta.get('total', 0) == 0:
@@ -46,4 +46,5 @@ def trabalho_diario():
 if __name__ == "__main__":
     print("--- INICIANDO SCRIPT ---")
     trabalho_diario()
+
     print("--- FIM DO SCRIPT ---")
