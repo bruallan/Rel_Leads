@@ -57,16 +57,11 @@ def montar_mensagem_resumo(meta, bc_count, rd, data_relatorio):
 - Bella Serra: {meta.get('bella_serra', 0)}
 - Vista Bella: {meta.get('vista_bella', 0)}
 
-*2. Interação (BotConversa):* {bc_count}
-
-*3. Cadastro (RD Station):* {rd.get('total', 0)}
-- Bella Serra: {rd.get('bella_serra', 0)}
-- Vista Bella: {rd.get('vista_bella', 0)}
-- Não atribuído: {rd.get('nao_atribuido', 0)}
 """
 
 def montar_mensagem_analise(analise_texto, contagem_responsaveis):
     texto_responsaveis = "\n*Leads 'Em Andamento' por Responsável:*\n"
     for nome, total in contagem_responsaveis.items():
         texto_responsaveis += f"- {nome}: {total}\n"
+
     return analise_texto + texto_responsaveis
