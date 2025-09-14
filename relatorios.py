@@ -64,4 +64,5 @@ def montar_mensagem_analise(analise_texto, contagem_responsaveis):
     for nome, total in contagem_responsaveis.items():
         texto_responsaveis += f"- {nome}: {total}\n"
 
-    return analise_texto + texto_responsaveis
+    return  texto_responsaveis + analise_texto
+
