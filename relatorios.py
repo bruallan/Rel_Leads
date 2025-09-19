@@ -77,15 +77,11 @@ def montar_mensagem_resumo(meta, bc_count, rd, data_relatorio):
 *Relatório de Leads de ontem ({data_formatada})*
 
 *1. Captação (Meta Ads):* {total_leads_meta}
-- Bella Serra: {leads_bs}{cpl_bs_texto}
-- Vista Bella: {leads_vb}{cpl_vb_texto}
+- Bella Serra: 
+{leads_bs}{cpl_bs_texto}
 
-*2. Interação (BotConversa):* {bc_count}
-
-*3. Cadastro (RD Station):* {rd.get('total', 0)}
-- Bella Serra: {rd.get('bella_serra', 0)}
-- Vista Bella: {rd.get('vista_bella', 0)}
-- Não atribuído: {rd.get('nao_atribuido', 0)}
+- Vista Bella: 
+{leads_vb}{cpl_vb_texto}
 """
     # --- FIM DA ATUALIZAÇÃO ---
 
@@ -94,3 +90,4 @@ def montar_mensagem_analise(analise_texto, contagem_responsaveis):
     for nome, total in contagem_responsaveis.items():
         texto_responsaveis += f"- {nome}: {total}\n"
     return analise_texto + texto_responsaveis
+
