@@ -50,19 +50,47 @@ def analisar_e_auditar_dados(leads_bc, dados_leads_rd, data_relatorio):
 
 def montar_mensagem_resumo(meta, bc_count, rd, data_relatorio):
     data_formatada = data_relatorio.strftime('%d/%m/%Y')
+
+    # --- INÍCIO DA ATUALIZAÇÃO ---
+    # Extrai os dados para Bella Serra e calcula o CPL
+    dados_bs = meta.get('bella_serra', {'leads': 0, 'spend': 0.0})
+    leads_bs = dados_bs.get('leads', 0)
+    spend_bs = dados_bs.get('spend', 0.0)
+    cpl_bs_texto = ""
+    if leads_bs > 0:
+        cpl_bs = spend_bs / leads_bs
+        # Formata para duas casas decimais, ex: R$ 5,45
+        cpl_bs_texto = f"\n(CPL de R$ {cpl_bs:.2f})"
+
+    # Extrai os dados para Vista Bella e calcula o CPL
+    dados_vb = meta.get('vista_bella', {'leads': 0, 'spend': 0.0})
+    leads_vb = dados_vb.get('leads', 0)
+    spend_vb = dados_vb.get('spend', 0.0)
+    cpl_vb_texto = ""
+    if leads_vb > 0:
+        cpl_vb = spend_vb / leads_vb
+        cpl_vb_texto = f"\n(CPL de R$ {cpl_vb:.2f})"
+    
+    total_leads_meta = meta.get('total', {}).get('leads', 0)
+
     return f"""
 *Relatório de Leads de ontem ({data_formatada})*
 
-*1. Captação (Meta Ads):* {meta.get('total', 0)}
-- Bella Serra: {meta.get('bella_serra', 0)}
-- Vista Bella: {meta.get('vista_bella', 0)}
+*1. Captação (Meta Ads):* {total_leads_meta}
+- Bella Serra: {leads_bs}{cpl_bs_texto}
+- Vista Bella: {leads_vb}{cpl_vb_texto}
 
+*2. Interação (BotConversa):* {bc_count}
+
+*3. Cadastro (RD Station):* {rd.get('total', 0)}
+- Bella Serra: {rd.get('bella_serra', 0)}
+- Vista Bella: {rd.get('vista_bella', 0)}
+- Não atribuído: {rd.get('nao_atribuido', 0)}
 """
+    # --- FIM DA ATUALIZAÇÃO ---
 
 def montar_mensagem_analise(analise_texto, contagem_responsaveis):
     texto_responsaveis = "\n*Leads 'Em Andamento' por Responsável:*\n"
     for nome, total in contagem_responsaveis.items():
         texto_responsaveis += f"- {nome}: {total}\n"
-
-    return  texto_responsaveis + analise_texto
-
+    return analise_texto + texto_responsaveis
