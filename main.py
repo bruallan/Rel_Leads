@@ -15,14 +15,14 @@ def trabalho_diario():
     dados_leads_rd = obter_dados_rdstation(data_alvo)
     contagem_responsaveis = obter_contagem_por_responsavel_rd()
     
-    # ATUALIZAÇÃO: Passando o objeto completo 'dados_leads_rd' para a análise
     texto_analise = analisar_e_auditar_dados(leads_bc, dados_leads_rd, data_alvo)
     
     mensagem_resumo = montar_mensagem_resumo(dados_meta, len(leads_bc), dados_leads_rd, data_alvo)
     mensagem_analise = montar_mensagem_analise(texto_analise, contagem_responsaveis)
     
     alertas = []
-    if dados_meta.get('total', 0) == 0:
+    # ATUALIZAÇÃO: Ajuste na verificação do total de leads do Meta
+    if dados_meta.get('total', {}).get('leads', 0) == 0:
         alertas.append("ALERTA: A busca no Meta Ads não retornou leads.")
     if not leads_bc:
         alertas.append("ALERTA: A busca no BotConversa não retornou interações.")
@@ -46,6 +46,4 @@ def trabalho_diario():
 if __name__ == "__main__":
     print("--- INICIANDO SCRIPT ---")
     trabalho_diario()
-
     print("--- FIM DO SCRIPT ---")
-
