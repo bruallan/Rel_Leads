@@ -7,17 +7,14 @@ def analisar_e_auditar_dados(leads_bc, dados_leads_rd, data_relatorio):
     telefones_bc = set(mapa_leads_bc.keys())
     telefones_rd = set(mapa_leads_rd.keys())
 
-    # ATUALIZAÇÃO: Adicionada a nova seção de auditoria
     texto_nao_atribuidos = ""
     lista_nao_atribuidos = dados_leads_rd.get('lista_nao_atribuidos', [])
     if lista_nao_atribuidos:
         texto_nao_atribuidos += f"\n*Leads 'Não Atribuídos' no RD Station ({len(lista_nao_atribuidos)}):*\n"
         for lead in lista_nao_atribuidos:
-            # Garante que o telefone seja exibido corretamente mesmo que seja None
             telefone = lead.get('telefone') if lead.get('telefone') else "Telefone não encontrado"
             texto_nao_atribuidos += f"- {lead.get('nome', 'N/A')} ({telefone})\n"
 
-    # Auditoria de Leads no RD sem produto (caso a categorização falhe)
     texto_auditoria_produto = ""
     leads_rd_sem_produto = []
     for tel, lead_rd in mapa_leads_rd.items():
@@ -31,7 +28,6 @@ def analisar_e_auditar_dados(leads_bc, dados_leads_rd, data_relatorio):
         texto_auditoria_produto += "\n".join(leads_rd_sem_produto)
         texto_auditoria_produto += "\n"
 
-    # Análise de Discrepâncias
     texto_discrepancias = f"\n*Análise de Discrepâncias:*\n"
     rd_nao_bc = telefones_rd - telefones_bc
     bc_nao_rd = telefones_bc - telefones_rd
@@ -51,18 +47,14 @@ def analisar_e_auditar_dados(leads_bc, dados_leads_rd, data_relatorio):
 def montar_mensagem_resumo(meta, bc_count, rd, data_relatorio):
     data_formatada = data_relatorio.strftime('%d/%m/%Y')
 
-    # --- INÍCIO DA ATUALIZAÇÃO ---
-    # Extrai os dados para Bella Serra e calcula o CPL
     dados_bs = meta.get('bella_serra', {'leads': 0, 'spend': 0.0})
     leads_bs = dados_bs.get('leads', 0)
     spend_bs = dados_bs.get('spend', 0.0)
     cpl_bs_texto = ""
     if leads_bs > 0:
         cpl_bs = spend_bs / leads_bs
-        # Formata para duas casas decimais, ex: R$ 5,45
         cpl_bs_texto = f"\n(CPL de R$ {cpl_bs:.2f})"
 
-    # Extrai os dados para Vista Bella e calcula o CPL
     dados_vb = meta.get('vista_bella', {'leads': 0, 'spend': 0.0})
     leads_vb = dados_vb.get('leads', 0)
     spend_vb = dados_vb.get('spend', 0.0)
@@ -83,11 +75,9 @@ def montar_mensagem_resumo(meta, bc_count, rd, data_relatorio):
 - Vista Bella: 
 {leads_vb}{cpl_vb_texto}
 """
-    # --- FIM DA ATUALIZAÇÃO ---
 
 def montar_mensagem_analise(analise_texto, contagem_responsaveis):
     texto_responsaveis = "\n*Leads 'Em Andamento' por Responsável:*\n"
     for nome, total in contagem_responsaveis.items():
         texto_responsaveis += f"- {nome}: {total}\n"
     return analise_texto + texto_responsaveis
-
