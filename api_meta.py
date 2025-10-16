@@ -1,16 +1,36 @@
-# ficheiro: api_meta.py (VERSÃO DE DIAGNÓSTICO)
+# ficheiro: api_meta.py (VERSÃO CORRIGIDA E FINAL)
 
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.adaccount import AdAccount
 import config
-import json # Importamos a biblioteca json para formatar a saída
+import re # Importamos a biblioteca de expressões regulares para extrair o saldo
+
+def extrair_saldo_disponivel(display_string):
+    """
+    Função auxiliar para extrair o valor numérico do saldo a partir
+    de um texto como "Saldo disponível (R$336,21 BRL)".
+    """
+    if not display_string:
+        return 0.0
+    
+    # Usa uma expressão regular para encontrar números com vírgula (formato brasileiro)
+    match = re.search(r'R\$\s*([\d\.,]+)', display_string)
+    if match:
+        try:
+            # Pega o valor encontrado (ex: "336,21"), remove pontos e troca vírgula por ponto
+            valor_str = match.group(1).replace('.', '').replace(',', '.')
+            return float(valor_str)
+        except (ValueError, IndexError):
+            # Se algo der errado na conversão, retorna 0
+            return 0.0
+    return 0.0
+
 
 def obter_dados_meta_ads(data_alvo):
     """
-    Função modificada para diagnóstico.
-    Ela vai buscar e imprimir TODOS os detalhes financeiros disponíveis da conta.
+    Função corrigida para buscar o saldo disponível real do campo 'funding_source_details'.
     """
-    print("Buscando dados do Meta Ads (MODO DIAGNÓSTICO)...")
+    print("Buscando dados do Meta Ads (com saldo correto)...")
     retorno_padrao = {
         'total': {'leads': 0, 'spend': 0.0},
         'bella_serra': {'leads': 0, 'spend': 0.0, 'balance': 0.0},
@@ -24,42 +44,26 @@ def obter_dados_meta_ads(data_alvo):
     try:
         FacebookAdsApi.init(access_token=config.META_ADS_ACCESS_TOKEN)
         resultados = {'total': {'leads': 0, 'spend': 0.0}}
+        data_formatada = data_alvo.strftime('%Y-%m-%d')
         
         for nome, account_id in config.META_AD_ACCOUNTS.items():
             if not account_id: continue
             
             account = AdAccount(account_id)
             
-            # --- LÓGICA DE DIAGNÓSTICO ---
-            # Pedimos à API vários campos financeiros para investigar
-            campos_para_investigar = [
-                'account_id',
-                'name',
-                'balance',
-                'amount_spent',
-                'spend_cap',
-                'funding_source',
-                'funding_source_details',
-                'currency'
-            ]
+            # --- LÓGICA CORRIGIDA PARA BUSCAR O SALDO ---
+            # Pedimos à API os detalhes da fonte de financiamento
+            account_details = account.api_get(fields=['funding_source_details'])
             
-            print(f"\n--- [INVESTIGANDO] Tentando buscar dados da conta: {nome} ---")
-            try:
-                account_details = account.api_get(fields=campos_para_investigar)
-                
-                # Usamos json.dumps para imprimir o resultado de forma legível
-                print(json.dumps(account_details.export_all_data(), indent=2))
-
-            except Exception as e_details:
-                print(f"-> FALHA ao buscar detalhes da conta: {e_details}")
-            print("----------------------------------------------------------\n")
-            # --- FIM DA LÓGICA DE DIAGNÓSTICO ---
-
-            # A parte de buscar leads e spend continua igual para o relatório não falhar
-            saldo_str = account_details.get('balance', '0') if 'account_details' in locals() else '0'
-            saldo_float = float(saldo_str) / 100
+            # Extraímos o texto que contém o saldo
+            funding_details = account_details.get('funding_source_details', {})
+            display_text = funding_details.get('display_string', '')
             
-            data_formatada = data_alvo.strftime('%Y-%m-%d')
+            # Usamos nossa nova função para extrair o valor numérico
+            saldo_final = extrair_saldo_disponivel(display_text)
+            # --- FIM DA LÓGICA CORRIGIDA ---
+
+            # Lógica para buscar leads e gastos (permanece igual)
             params_insights = {
                 'time_range': {'since': data_formatada, 'until': data_formatada},
                 'fields': ['actions', 'spend'], 'level': 'account'
@@ -75,11 +79,13 @@ def obter_dados_meta_ads(data_alvo):
                         count = int(action['value'])
                         break
             
-            resultados[nome] = {'leads': count, 'spend': spend, 'balance': saldo_float}
+            # Armazenamos os dados corretos
+            resultados[nome] = {'leads': count, 'spend': spend, 'balance': saldo_final}
             resultados['total']['leads'] += count
             resultados['total']['spend'] += spend
             
+        print(f"-> Sucesso! Encontrados {resultados['total']['leads']} leads no Meta Ads e saldos corrigidos.")
         return resultados
     except Exception as e:
-        print(f"-> FALHA GERAL ao buscar dados do Meta Ads: {e}")
+        print(f"-> FALHA ao buscar dados do Meta Ads: {e}")
         return retorno_padrao
