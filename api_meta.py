@@ -1,16 +1,16 @@
-# ficheiro: api_meta.py
+# ficheiro: api_meta.py (VERSÃO DE DIAGNÓSTICO)
 
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.adaccount import AdAccount
 import config
+import json # Importamos a biblioteca json para formatar a saída
 
 def obter_dados_meta_ads(data_alvo):
     """
-    Função atualizada para buscar leads, gastos (spend) e o saldo (balance)
-    de cada conta de anúncios.
+    Função modificada para diagnóstico.
+    Ela vai buscar e imprimir TODOS os detalhes financeiros disponíveis da conta.
     """
-    print("Buscando dados do Meta Ads (incluindo saldo)...")
-    # Estrutura de retorno padrão, agora com o campo 'balance'
+    print("Buscando dados do Meta Ads (MODO DIAGNÓSTICO)...")
     retorno_padrao = {
         'total': {'leads': 0, 'spend': 0.0},
         'bella_serra': {'leads': 0, 'spend': 0.0, 'balance': 0.0},
@@ -24,29 +24,46 @@ def obter_dados_meta_ads(data_alvo):
     try:
         FacebookAdsApi.init(access_token=config.META_ADS_ACCESS_TOKEN)
         resultados = {'total': {'leads': 0, 'spend': 0.0}}
-        data_formatada = data_alvo.strftime('%Y-%m-%d')
-        
-        # Parâmetros para buscar os insights (leads e gastos)
-        params_insights = {
-            'time_range': {'since': data_formatada, 'until': data_formatada},
-            'fields': ['actions', 'spend'], 
-            'level': 'account'
-        }
         
         for nome, account_id in config.META_AD_ACCOUNTS.items():
             if not account_id: continue
             
             account = AdAccount(account_id)
             
-            # --- NOVA LÓGICA PARA BUSCAR O SALDO ---
-            # Pedimos à API os detalhes da conta, especificamente o campo 'balance'
-            account_details = account.api_get(fields=['balance'])
-            # A API retorna o saldo como string (ex: '12345'), dividimos por 100 para ter o valor real
-            saldo_str = account_details.get('balance', '0')
-            saldo_float = float(saldo_str) / 100
-            # --- FIM DA NOVA LÓGICA ---
+            # --- LÓGICA DE DIAGNÓSTICO ---
+            # Pedimos à API vários campos financeiros para investigar
+            campos_para_investigar = [
+                'account_id',
+                'name',
+                'balance',
+                'amount_spent',
+                'spend_cap',
+                'funding_source',
+                'funding_source_details',
+                'currency'
+            ]
             
-            # Busca de insights (como já existia)
+            print(f"\n--- [INVESTIGANDO] Tentando buscar dados da conta: {nome} ---")
+            try:
+                account_details = account.api_get(fields=campos_para_investigar)
+                
+                # Usamos json.dumps para imprimir o resultado de forma legível
+                print(json.dumps(account_details.export_all_data(), indent=2))
+
+            except Exception as e_details:
+                print(f"-> FALHA ao buscar detalhes da conta: {e_details}")
+            print("----------------------------------------------------------\n")
+            # --- FIM DA LÓGICA DE DIAGNÓSTICO ---
+
+            # A parte de buscar leads e spend continua igual para o relatório não falhar
+            saldo_str = account_details.get('balance', '0') if 'account_details' in locals() else '0'
+            saldo_float = float(saldo_str) / 100
+            
+            data_formatada = data_alvo.strftime('%Y-%m-%d')
+            params_insights = {
+                'time_range': {'since': data_formatada, 'until': data_formatada},
+                'fields': ['actions', 'spend'], 'level': 'account'
+            }
             insights = account.get_insights(params=params_insights)
             
             count = 0
@@ -58,14 +75,11 @@ def obter_dados_meta_ads(data_alvo):
                         count = int(action['value'])
                         break
             
-            # Armazenamos leads, gastos e o novo saldo
             resultados[nome] = {'leads': count, 'spend': spend, 'balance': saldo_float}
             resultados['total']['leads'] += count
             resultados['total']['spend'] += spend
             
-        print(f"-> Sucesso! Encontrados {resultados['total']['leads']} leads no Meta Ads e saldos atualizados.")
         return resultados
     except Exception as e:
-        print(f"-> FALHA ao buscar dados do Meta Ads: {e}")
-        # Em caso de falha, usamos a estrutura padrão com saldo zerado
+        print(f"-> FALHA GERAL ao buscar dados do Meta Ads: {e}")
         return retorno_padrao
